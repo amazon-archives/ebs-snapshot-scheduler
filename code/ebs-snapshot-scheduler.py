@@ -310,7 +310,7 @@ def lambda_handler(event, context):
                 # Purge snapshots that are scheduled for deletion and snapshots that were manually deleted by users.
                 for snap in ec2_resource.snapshots.filter(OwnerIds=['self']):
                     snapshots.append(snap.id)
-                deleted_snapshot_count = purge_history(ec2, snapshots, history_table, aws_region)
+                deleted_snapshot_count = purge_history(ec2_resource, snapshots, history_table, aws_region)
                 if deleted_snapshot_count > 0:
                     print "Number of snapshots deleted successfully:", deleted_snapshot_count
                     deleted_snapshot_count = 0
