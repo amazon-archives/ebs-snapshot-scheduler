@@ -27,7 +27,6 @@ def backup_instance(ec2, instance_obj, retention_days, history_table, aws_region
     new_snapshot_list = []
     for volume in instance_obj.volumes.all():
         current_time = datetime.datetime.utcnow()
-
         current_time_str = current_time.strftime(
             "%h %d,%H:%M")
         description = """Created by EBSSnapshotScheduler from %s(%s) at %s UTC""" % (
@@ -66,51 +65,55 @@ def backup_instance(ec2, instance_obj, retention_days, history_table, aws_region
 def parse_date(dt_string):
     return datetime.datetime.strptime(dt_string, '%Y-%m-%d %H:%M:%S.%f')
 
+
 def purge_history(ec2, snapshots, history_table, aws_region):
-    history = history_table.scan()
-    purge_list = []
-    delete_snapshot_list = []
-    delete_history_snapshot_list = []
+    try:
+        history = history_table.scan()
+        purge_list = []
+        delete_snapshot_list = []
+        delete_history_snapshot_list = []
 
-    for entry in history['Items']:
-        if entry['purge_time'] != "NA" and entry['region'] == aws_region:
-            check_time = parse_date(entry['purge_time'])
-            current_time = datetime.datetime.utcnow()
+        for entry in history['Items']:
+            if entry['purge_time'] != "NA" and entry['region'] == aws_region:
+                check_time = parse_date(entry['purge_time'])
+                current_time = datetime.datetime.utcnow()
 
-            time_flag = check_time <= current_time
-            snapshot_id = entry['snapshot_id']
+                time_flag = check_time <= current_time
+                snapshot_id = entry['snapshot_id']
 
-            if time_flag:
-                history_table.delete_item(Key={'snapshot_id': snapshot_id})
-                purge_list.append(snapshot_id)
+                if time_flag:
+                    history_table.delete_item(Key={'snapshot_id': snapshot_id})
+                    purge_list.append(snapshot_id)
 
-            # Covers the case if the snapshot was deleted manually.
-            if snapshot_id not in snapshots:
-                response = history_table.delete_item(Key={'snapshot_id': snapshot_id})
-                if response['ResponseMetadata']['HTTPStatusCode'] == 200:
-                    delete_history_snapshot_list.append(snapshot_id)
-    items_deleted = len(purge_list) + len(delete_history_snapshot_list)
+                # Covers the case if the snapshot was deleted manually.
+                if snapshot_id not in snapshots:
+                    response = history_table.delete_item(Key={'snapshot_id': snapshot_id})
+                    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+                        delete_history_snapshot_list.append(snapshot_id)
+        items_deleted = len(purge_list) + len(delete_history_snapshot_list)
 
-    if items_deleted > 0:
-        print "History table updated: items deleted:", items_deleted
-    if len(delete_history_snapshot_list) > 0:
-        print "History table updated:", len(
-            delete_history_snapshot_list), "snapshot(s) does not exist. It was probably deleted manually or by another tool. Snapshot ID List:", delete_history_snapshot_list
+        if items_deleted > 0:
+            print "History table updated: items deleted:", items_deleted
+        if len(delete_history_snapshot_list) > 0:
+            print "History table updated:", len(
+                delete_history_snapshot_list), "snapshot(s) does not exist. It was probably deleted manually or by another tool. Snapshot ID List:", delete_history_snapshot_list
 
-    if len(purge_list) > 0:
-        snaps = ec2.snapshots.filter(SnapshotIds=purge_list)
-        for snap in snaps:
-            try:
-                response = snap.delete()
-                if response['ResponseMetadata']['HTTPStatusCode'] == 200:
-                    delete_snapshot_list.append(snap.id)
-            except Exception as e:
-                print e
-                continue
-    if len(delete_snapshot_list) > 0:
-        print "List of snapshots to be deleted:", delete_snapshot_list
-    return len(delete_snapshot_list)
-
+        if len(purge_list) > 0:
+            snaps = ec2.snapshots.filter(SnapshotIds=purge_list)
+            for snap in snaps:
+                try:
+                    response = snap.delete()
+                    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+                        delete_snapshot_list.append(snap.id)
+                except Exception as e:
+                    print e
+                    continue
+        if len(delete_snapshot_list) > 0:
+            print "List of snapshots to be deleted:", delete_snapshot_list
+        return len(delete_snapshot_list)
+    except Exception as e:
+        print e
+        pass
 
 def is_int(s):
     try:
@@ -118,6 +121,7 @@ def is_int(s):
         return True
     except ValueError:
         return False
+
 
 # Catching typos in case
 def standardize_tz(tz):
@@ -140,6 +144,7 @@ def standardize_tz(tz):
     except Exception as e:
         print e
         pass
+
 
 def parse_tag_values(tag, default1, default2, default_snapshot_time):
     global snapshot_time, retention_days, time_zone, days_active
@@ -177,6 +182,7 @@ def parse_tag_values(tag, default1, default2, default_snapshot_time):
         # Standardize Time Zone case (Case Sensitive)
     time_zone = standardize_tz(time_zone)
 
+
 # Tag all the snapshots
 def tag_snapshots(ec2, snapshot_list):
     global custom_tag_name
@@ -195,8 +201,8 @@ def tag_snapshots(ec2, snapshot_list):
         print e
         pass
 
-def lambda_handler(event, context):
 
+def lambda_handler(event, context):
     # Reading output items from the CF stack
     outputs = {}
     stack_name = context.invoked_function_arn.split(':')[6].rsplit('-', 2)[0]
@@ -208,7 +214,6 @@ def lambda_handler(event, context):
     uuid = outputs['UUID']
     policy_table = dynamodb.Table(policy_table_name)
     history_table = dynamodb.Table(history_table_name)
-
 
     aws_regions = ec2_client.describe_regions()['Regions']
 
@@ -232,7 +237,7 @@ def lambda_handler(event, context):
     time_iso = datetime.datetime.utcnow().isoformat()
     time_stamp = str(time_iso)
     utc_time = datetime.datetime.utcnow()
-    #time_delta must be changed before updating the CWE schedule for Lambda
+    # time_delta must be changed before updating the CWE schedule for Lambda
     time_delta = datetime.timedelta(minutes=4)
     # Declare Dicts
     region_dict = {}
@@ -247,10 +252,9 @@ def lambda_handler(event, context):
 
     for region in aws_regions:
         try:
-
             print "\nExecuting for region %s" % (region['RegionName'])
 
-            # Create connection to the EC2 using Boto3 resources interface
+            # Create connection to the EC2 using boto3 resources interface
             ec2 = boto3.client('ec2', region_name=region['RegionName'])
             ec2_resource = boto3.resource('ec2', region_name=region['RegionName'])
             aws_region = region['RegionName']
@@ -259,6 +263,7 @@ def lambda_handler(event, context):
             snapshot_list = []
             agg_snapshot_list = []
             snapshots = []
+            retention_period_per_instance = {}
 
             # Filter Instances for Scheduler Tag
             instances = ec2_resource.instances.all()
@@ -304,6 +309,7 @@ def lambda_handler(event, context):
                             if snapshot_time >= str(now_max) and snapshot_time <= str(now) and \
                                             active_day is True:
                                 snapshot_list.append(i.instance_id)
+                                retention_period_per_instance[i.instance_id] = retention_days
             deleted_snapshot_count = 0
 
             if auto_snapshot_deletion == "yes":
@@ -314,18 +320,23 @@ def lambda_handler(event, context):
                 if deleted_snapshot_count > 0:
                     print "Number of snapshots deleted successfully:", deleted_snapshot_count
                     deleted_snapshot_count = 0
-            else:
-                retention_days = "NA"
 
             # Execute Snapshot Commands
             if snapshot_list:
                 print "Taking snapshot of all the volumes for", len(snapshot_list), "instance(s)", snapshot_list
                 for instance in ec2_resource.instances.filter(InstanceIds=snapshot_list):
+                    if auto_snapshot_deletion == "no":
+                        retention_days = "NA"
+                    else:
+                        for key, value in retention_period_per_instance.iteritems():
+                            if key == instance.id:
+                                retention_days = value
                     new_snapshots = backup_instance(ec2_resource, instance, retention_days, history_table, aws_region)
                     return_snapshot_list = new_snapshots
                     agg_snapshot_list.extend(return_snapshot_list)
                 print "Number of new snapshots created:", len(agg_snapshot_list)
-                tag_snapshots(ec2, agg_snapshot_list)
+                if agg_snapshot_list:
+                    tag_snapshots(ec2, agg_snapshot_list)
             else:
                 print "No new snapshots taken."
 
@@ -335,8 +346,6 @@ def lambda_handler(event, context):
                 new_dict = {}
                 current_dict = {}
                 all_status_dict = {}
-                version = {}
-
                 del_dict['snapshots_deleted'] = deleted_snapshot_count
                 new_dict['snapshots_created'] = len(agg_snapshot_list)
                 current_dict['snapshots_existing'] = len(snapshots)
