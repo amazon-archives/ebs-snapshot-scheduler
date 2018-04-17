@@ -1,3 +1,9 @@
+# Notice:
+EBS Snapshot Scheduler has been superseded by [AWS Ops Automator](https://aws.amazon.com/answers/infrastructure-management/ops-automator/).
+
+In 2016, the EBS Snapshot Scheduler was launched to help AWS customers automatically create snapshots of their Amazon Elastic Block Store (Amazon EBS) volumes on a defined schedule. In 2017, AWS launched [AWS Ops Automator](https://aws.amazon.com/answers/infrastructure-management/ops-automator/), a new and improved solution that enables customers to schedule EBS and Amazon Redshift snapshots, and automate other operational tasks. We encourage customers to migrate to AWS Ops Automator for future updates and new features.
+Legacy templates, scripts, and documentation for EBS Snapshot Scheduler are available in this repo for reference.
+
 # ebs-snapshot-scheduler
 
 The [EBS Snapshot Scheduler](https://aws.amazon.com/answers/infrastructure-management/ebs-snapshot-scheduler/) is a simple AWS solution that allows you to automatically take point-in-time snapshots (crash-consistent) of your EBS volumes. 
